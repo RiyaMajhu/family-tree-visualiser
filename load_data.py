@@ -5,4 +5,4 @@ families = pd.read_excel("data/FamilyTree.xlsx", sheet_name="Families")
 
 print(people.head())
 print(families.head())
-print(len(people), "people and", len(families), "families")
+print(len(people), "people and", len(families), "   families")
