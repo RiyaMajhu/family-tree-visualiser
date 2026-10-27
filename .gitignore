@@ -2,3 +2,4 @@ venv/
 .venv/
 data/
 .idea/
+db_config.py
