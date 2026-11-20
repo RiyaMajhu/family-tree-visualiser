@@ -3,3 +3,4 @@ venv/
 data/
 .idea/
 db_config.py
+.pytest_cache/
