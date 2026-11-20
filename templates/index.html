@@ -51,7 +51,32 @@
       margin: 0; font-size: 13px; color: var(--line);
     }
 
-    #FamilyChart { width: 100vw; height: 100vh; }
+    #FamilyChart { width: calc(100vw - 320px); height: 100vh; }
+
+    /* details panel on the right */
+    #details {
+      position: fixed; top: 60px; right: 0; bottom: 0; z-index: 5;
+      width: 320px; box-sizing: border-box;
+      padding: 20px 22px; overflow-y: auto;
+      background: var(--paper);
+      border-left: 1px solid var(--line);
+      font-size: 14px;
+    }
+    #details h2 {
+      margin: 0; font-family: "Libre Baskerville", serif; font-size: 20px;
+    }
+    #details .years { margin: 4px 0 16px; color: var(--line); }
+    #details h3 {
+      margin: 18px 0 6px; padding-bottom: 3px;
+      font-size: 12px; text-transform: uppercase; letter-spacing: 1px;
+      color: var(--highlight); border-bottom: 1px solid #d8cfbd;
+    }
+    #details h4 { margin: 10px 0 4px; font-size: 14px; font-weight: 600; }
+    #details ul { margin: 0; padding-left: 18px; }
+    #details li { margin: 3px 0; }
+    #details .note { color: var(--line); font-style: italic; }
+    #details a { color: var(--ink); cursor: pointer; text-decoration: underline dotted; }
+    #details a:hover { color: var(--highlight); }
 
     .f3 {
       --background-color: var(--paper);
@@ -99,6 +124,9 @@
     <p id="showing"></p>
   </header>
   <p id="hint">Click on anyone to centre the tree on them</p>
+
+  <!-- details about the selected person (filled in by showDetails below) -->
+  <aside id="details"></aside>
 
   <!-- the tree gets drawn in here -->
   <div id="FamilyChart" class="f3"></div>
@@ -197,9 +225,144 @@
           }
         }
 
+        // ---------- details panel ----------
+
+        // a clickable name that moves the tree to that person
+        function personLink(id) {
+          const link = document.createElement("a")
+          link.textContent = fullName(people[id]) + " (" + people[id].data.years + ")"
+          link.addEventListener("click", () => showFamilyOf(id))
+          return link
+        }
+
+        // a heading followed by a list of people (or a note if there's nobody)
+        function addSection(panel, title, ids, extraText = {}) {
+          const heading = document.createElement("h3")
+          heading.textContent = title
+          panel.appendChild(heading)
+
+          if (ids.length === 0) {
+            const note = document.createElement("p")
+            note.className = "note"
+            note.textContent = "None recorded"
+            panel.appendChild(note)
+            return
+          }
+          const list = document.createElement("ul")
+          for (const id of ids) {
+            const item = document.createElement("li")
+            item.appendChild(personLink(id))
+            if (extraText[id]) {
+              const extra = document.createElement("span")
+              extra.className = "note"
+              extra.textContent = " " + extraText[id]
+              item.appendChild(extra)
+            }
+            list.appendChild(item)
+          }
+          panel.appendChild(list)
+        }
+
+        function showDetails(id) {
+          const person = people[id]
+          const panel = document.getElementById("details")
+          panel.innerHTML = ""
+
+          const name = document.createElement("h2")
+          name.textContent = fullName(person)
+          panel.appendChild(name)
+          const years = document.createElement("p")
+          years.className = "years"
+          years.textContent = person.data.years
+          panel.appendChild(years)
+
+          // parents
+          addSection(panel, "Parents", person.rels.parents)
+
+          // partners, each with the children they had together
+          const partnersHeading = document.createElement("h3")
+          partnersHeading.textContent = "Partners and children"
+          panel.appendChild(partnersHeading)
+
+          const partners = person.rels.spouses
+          const childrenWithKnownPartner = new Set()
+          for (const partner of partners) {
+            const together = person.rels.children.filter(c => people[c].rels.parents.includes(partner))
+            together.forEach(c => childrenWithKnownPartner.add(c))
+
+            const partnerHeading = document.createElement("h4")
+            partnerHeading.append("With ", personLink(partner))
+            panel.appendChild(partnerHeading)
+            addChildList(panel, together)
+          }
+          // children where the other parent isn't known
+          const otherChildren = person.rels.children.filter(c => !childrenWithKnownPartner.has(c))
+          if (otherChildren.length > 0) {
+            const unknown = document.createElement("h4")
+            unknown.textContent = "With an unknown partner"
+            panel.appendChild(unknown)
+            addChildList(panel, otherChildren)
+          }
+          if (partners.length === 0 && otherChildren.length === 0) {
+            const note = document.createElement("p")
+            note.className = "note"
+            note.textContent = "None recorded"
+            panel.appendChild(note)
+          }
+
+          // siblings: full ones share both parents, half ones share just one
+          const full = []
+          const half = []
+          const halfThrough = {}
+          for (const parent of person.rels.parents) {
+            for (const sibling of people[parent].rels.children) {
+              if (sibling === id || full.includes(sibling) || half.includes(sibling)) continue
+              const shared = people[sibling].rels.parents.filter(p => person.rels.parents.includes(p))
+              if (shared.length === 2 && person.rels.parents.length === 2) {
+                full.push(sibling)
+              } else {
+                half.push(sibling)
+                const role = byGender(parent, "father", "mother", "parent")
+                halfThrough[sibling] = "(through their " + role + ")"
+              }
+            }
+          }
+          addSection(panel, "Brothers and sisters", full)
+          addSection(panel, "Half-brothers and half-sisters", half, halfThrough)
+
+          // step-parents: a parent's other partners
+          const stepParents = []
+          for (const parent of person.rels.parents) {
+            for (const partner of people[parent].rels.spouses) {
+              if (!person.rels.parents.includes(partner) && !stepParents.includes(partner)) {
+                stepParents.push(partner)
+              }
+            }
+          }
+          if (stepParents.length > 0) {
+            addSection(panel, "Step-parents", stepParents)
+          }
+        }
+
+        function addChildList(panel, childIds) {
+          if (childIds.length === 0) {
+            const note = document.createElement("p")
+            note.className = "note"
+            note.textContent = "No children recorded"
+            panel.appendChild(note)
+            return
+          }
+          const list = document.createElement("ul")
+          for (const child of childIds) {
+            const item = document.createElement("li")
+            item.appendChild(personLink(child))
+            list.appendChild(item)
+          }
+          panel.appendChild(list)
+        }
+
         // create the tree
         const chart = f3.createChart("#FamilyChart", data)
-          .setTransitionTime(300)
           .setCardXSpacing(250)
           .setCardYSpacing(150)
           .setAncestryDepth(2)          // show 2 generations above
@@ -215,6 +378,7 @@
         // centre the tree on someone and update the labels and the "showing" text
         function showFamilyOf(id, initial = false) {
           setRelations(id)
+          showDetails(id)
           const person = people[id]
           document.getElementById("showing").innerHTML =
             "Showing the family of <strong>" + fullName(person) + "</strong> (" + person.data.years + ")"
