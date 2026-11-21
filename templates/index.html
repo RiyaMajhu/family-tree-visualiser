@@ -43,6 +43,15 @@
     }
     #search:focus { border-bottom-color: var(--highlight); }
 
+    #home, #set-home {
+      padding: 6px 14px; font-size: 14px; font-family: inherit;
+      color: var(--ink); background: transparent;
+      border: 1px solid var(--line); border-radius: 2px; cursor: pointer;
+    }
+    #home:hover, #set-home:hover { border-color: var(--highlight); color: var(--highlight); }
+    #set-home:disabled { opacity: 0.4; cursor: default; }
+    #set-home:disabled:hover { border-color: var(--line); color: var(--ink); }
+
     #showing { margin: 0 0 0 auto; font-size: 15px; }
     #showing strong { font-family: "Libre Baskerville", serif; }
 
@@ -121,6 +130,8 @@
     <h1>Family Tree</h1>
     <input id="search" list="people" placeholder="Find a person">
     <datalist id="people"></datalist>
+    <button id="home">Home</button>
+    <button id="set-home">Set as home</button>
     <p id="showing"></p>
   </header>
   <p id="hint">Click on anyone to centre the tree on them</p>
@@ -376,9 +387,15 @@
           .setOnCardClick((e, d) => showFamilyOf(d.data.id))
 
         // centre the tree on someone and update the labels and the "showing" text
+        // who the tree is currently centred on, and who the home person is
+        let currentId = null
+        let homeId = null
+
         function showFamilyOf(id, initial = false) {
+          currentId = id
           setRelations(id)
           showDetails(id)
+          updateHomeButtons()
           const person = people[id]
           document.getElementById("showing").innerHTML =
             "Showing the family of <strong>" + fullName(person) + "</strong> (" + person.data.years + ")"
@@ -388,8 +405,51 @@
             : { tree_position: "main_to_middle" })   // keep the zoom level, just move to the person
         }
 
-        // start on the person in the address bar, or the first person
-        const startId = new URLSearchParams(window.location.search).get("id") || data[0].id
+        // ---------- home person ----------
+
+        const homeButton = document.getElementById("home")
+        const setHomeButton = document.getElementById("set-home")
+
+        // remember the home person in the browser, so it's still there after a refresh
+        // (wrapped in try/catch because some browsers block saving, e.g. private windows)
+        function loadSavedHome() {
+          try {
+            const saved = localStorage.getItem("homePerson")
+            return saved && people[saved] ? saved : null
+          } catch (e) {
+            return null
+          }
+        }
+
+        function saveHome(id) {
+          try {
+            localStorage.setItem("homePerson", id)
+          } catch (e) {
+            // saving isn't allowed, so it just lasts until the page is closed
+          }
+        }
+
+        function updateHomeButtons() {
+          if (!homeId) return
+          homeButton.title = "Back to " + fullName(people[homeId])
+          // no point setting someone as home if they already are
+          setHomeButton.disabled = (currentId === homeId)
+        }
+
+        homeButton.addEventListener("click", () => showFamilyOf(homeId))
+
+        setHomeButton.addEventListener("click", () => {
+          homeId = currentId
+          saveHome(homeId)
+          updateHomeButtons()
+        })
+
+        // who to start on: the person in the address bar first, then the saved home person,
+        // then just the first person in the data
+        const idFromAddress = new URLSearchParams(window.location.search).get("id")
+        const savedHome = loadSavedHome()
+        homeId = savedHome || idFromAddress || data[0].id
+        const startId = idFromAddress || homeId
         showFamilyOf(startId, true)
 
         // when someone picks a name from the search box, move the tree to them
